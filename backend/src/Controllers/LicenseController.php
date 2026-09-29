@@ -43,6 +43,7 @@ class LicenseController {
                     "owner" => $row['owner_name'],
                     "product" => $row['product_name'],
                     "upline" => $row['upline'],
+                    "start" => $row['start_date'] ?? $row['created_at'],
                     "expiration" => $row['expiration_date'],
                     "created_at" => $row['created_at']
                 ]
@@ -74,23 +75,75 @@ class LicenseController {
     // Admin: Create
     public function create() {
         $data = json_decode(file_get_contents("php://input"));
-        // Need: qq, owner_name, product_name, upline, expiration_date
-        $query = "INSERT INTO licenses (qq, owner_name, product_name, upline, expiration_date) VALUES (:qq, :owner, :product, :upline, :exp)";
-        $stmt = $this->db->prepare($query);
-        
-        $params = [
-            ":qq" => $data->qq,
-            ":owner" => $data->owner_name,
-            ":product" => $data->product_name,
-            ":upline" => $data->upline,
-            ":exp" => $data->expiration_date
+
+        // Required fields: 授权QQ / 授权主人 / 有效期 / 授权上级 / 开通时间 / 所属产品
+        $required = [
+            'qq'              => '授权QQ',
+            'owner_name'      => '授权主人',
+            'expiration_date' => '有效期',
+            'upline'          => '授权上级',
+            'start_date'      => '开通时间',
+            'product_name'    => '所属产品',
         ];
-        
-        if($stmt->execute($params)) {
-             echo json_encode(["message" => "Created successfully"]);
-        } else {
+
+        foreach ($required as $field => $label) {
+            if (!isset($data->$field) || trim((string)$data->$field) === '') {
+                http_response_code(400);
+                echo json_encode(["message" => "请填写{$label}"]);
+                return;
+            }
+        }
+
+        // Normalize datetime-local format ("2026-01-01T10:00") to MySQL format
+        $start = str_replace('T', ' ', trim($data->start_date));
+        $exp   = str_replace('T', ' ', trim($data->expiration_date));
+
+        // Validate datetime values
+        $startTs = strtotime($start);
+        $expTs   = strtotime($exp);
+        if ($startTs === false) {
+            http_response_code(400);
+            echo json_encode(["message" => "开通时间格式不正确"]);
+            return;
+        }
+        if ($expTs === false) {
+            http_response_code(400);
+            echo json_encode(["message" => "有效期格式不正确"]);
+            return;
+        }
+
+        // Business rule: 有效期不能早于开通时间
+        if ($expTs < $startTs) {
+            http_response_code(400);
+            echo json_encode(["message" => "有效期不能早于开通时间，请重新选择"]);
+            return;
+        }
+
+        $query = "INSERT INTO licenses (qq, owner_name, product_name, upline, start_date, expiration_date)
+                  VALUES (:qq, :owner, :product, :upline, :start, :exp)";
+        $stmt = $this->db->prepare($query);
+
+        $params = [
+            ":qq"      => trim($data->qq),
+            ":owner"   => trim($data->owner_name),
+            ":product" => trim($data->product_name),
+            ":upline"  => trim($data->upline),
+            ":start"   => date('Y-m-d H:i:s', $startTs),
+            ":exp"     => date('Y-m-d H:i:s', $expTs),
+        ];
+
+        try {
+             if($stmt->execute($params)) {
+                  // INSERT is committed immediately, so the new authorization
+                  // is instantly queryable on the public page.
+                  echo json_encode(["message" => "Created successfully"]);
+             } else {
+                  http_response_code(500);
+                  echo json_encode(["message" => "Create failed"]);
+             }
+        } catch (\PDOException $e) {
              http_response_code(500);
-             echo json_encode(["message" => "Create failed"]);
+             echo json_encode(["message" => "Create failed: " . $e->getMessage()]);
         }
     }
     

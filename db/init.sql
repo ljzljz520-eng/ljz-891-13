@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS licenses (
     owner_name VARCHAR(50) NOT NULL,
     product_name VARCHAR(100) NOT NULL,
     upline VARCHAR(50) NOT NULL COMMENT '上级代理',
-    expiration_date DATETIME NOT NULL,
+    start_date DATETIME NOT NULL COMMENT '开通时间',
+    expiration_date DATETIME NOT NULL COMMENT '有效期（到期时间）',
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -42,7 +43,7 @@ INSERT INTO admins (username, password) VALUES
 ('admin', '$2y$10$eLYd0HGc9JM0qxzPkpLtDuL1UZRAS6XAwgVNO7oL9R0M/f/6bkEcW'); 
 
 -- Seed Data (Sample Licenses)
-INSERT INTO licenses (qq, owner_name, product_name, upline, expiration_date) VALUES 
-('123456789', '张三', '超级授权系统VIP版', '总代理', '2026-12-31 23:59:59'),
-('987654321', '李四', '企业级管理后台', '核心代理', '2025-06-30 23:59:59'),
-('11111', '王五', '测试过期产品', '测试员', '2023-01-01 00:00:00'); -- Expired
+INSERT INTO licenses (qq, owner_name, product_name, upline, start_date, expiration_date) VALUES
+('123456789', '张三', '超级授权系统VIP版', '总代理', '2025-01-01 00:00:00', '2026-12-31 23:59:59'),
+('987654321', '李四', '企业级管理后台', '核心代理', '2024-06-30 00:00:00', '2025-06-30 23:59:59'),
+('11111', '王五', '测试过期产品', '测试员', '2022-01-01 00:00:00', '2023-01-01 00:00:00'); -- Expired

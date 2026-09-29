@@ -113,8 +113,8 @@ export default function QueryPage() {
                <ResultItem label="授权主人" value={result.owner} />
                <ResultItem label="所属产品" value={result.product} />
                <ResultItem label="授权上级" value={result.upline} />
-               <ResultItem label="开通时间" value={result.created_at} />
-               <ResultItem label="授权有效期" value={result.expiration} />
+               <ResultItem label="开通时间" value={formatDateTime(result.start || result.created_at)} />
+               <ResultItem label="授权有效期" value={formatDateTime(result.expiration)} />
             </div>
          </div>
        )}
@@ -143,6 +143,14 @@ export default function QueryPage() {
        )}
     </div>
   );
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function ResultItem({ label, value }) {
