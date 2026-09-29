@@ -1,8 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import { Lock, User, Plus, Trash2, Search, Sliders, Users, Shield } from 'lucide-react';
+import { Lock, User, Plus, Trash2, Search, Sliders, Users, Shield, Hash, Package, Network, CalendarCheck, CalendarClock, AlertCircle } from 'lucide-react';
 import Modal from '../components/Modal';
+
+// Format a Date as a value accepted by <input type="datetime-local">
+const toLocalInputValue = (date) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+const defaultStart = () => toLocalInputValue(new Date());
+const defaultExpiration = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return toLocalInputValue(d);
+};
+
+// Format backend datetime for table display
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const emptyLicenseForm = () => ({
+  qq: '',
+  owner_name: '',
+  product_name: '',
+  upline: '官方',
+  start_date: defaultStart(),
+  expiration_date: defaultExpiration(),
+});
 
 export default function AdminPage() {
   const [token, setToken] = useState(localStorage.getItem('auth_token'));
@@ -14,9 +44,8 @@ export default function AdminPage() {
   const [filteredLicenses, setFilteredLicenses] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   
-  const [newLicense, setNewLicense] = useState({
-    qq: '', owner_name: '', product_name: '', upline: '官方', expiration_date: ''
-  });
+  const [newLicense, setNewLicense] = useState(emptyLicenseForm);
+  const [formErrors, setFormErrors] = useState({});
 
   // Modal State
   const [deleteId, setDeleteId] = useState(null);
@@ -69,13 +98,54 @@ export default function AdminPage() {
     }
   };
 
+  // Validate the license form before saving
+  const validateLicense = () => {
+    const errors = {};
+    const f = newLicense;
+
+    if (!f.qq.trim()) errors.qq = '请填写授权QQ';
+    else if (!/^\d{5,12}$/.test(f.qq.trim())) errors.qq = '请输入正确的QQ号码（5-12位数字）';
+
+    if (!f.owner_name.trim()) errors.owner_name = '请填写授权主人';
+    if (!f.product_name.trim()) errors.product_name = '请填写所属产品';
+    if (!f.upline.trim()) errors.upline = '请填写授权上级';
+
+    if (!f.start_date) errors.start_date = '请选择开通时间';
+    if (!f.expiration_date) errors.expiration_date = '请选择有效期';
+
+    // 有效期不能早于开通时间
+    if (f.start_date && f.expiration_date && new Date(f.expiration_date) < new Date(f.start_date)) {
+      errors.expiration_date = '有效期不能早于开通时间';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const updateLicenseField = (field, value) => {
+    setNewLicense((prev) => ({ ...prev, [field]: value }));
+    setFormErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
       if (activeTab === 'license') {
-          await axios.post('/api/license/create', newLicense);
-          toast.success('授权添加成功');
-          setNewLicense({ qq: '', owner_name: '', product_name: '', upline: '官方', expiration_date: '' });
+          if (!validateLicense()) {
+            toast.error('请检查表单填写内容');
+            return;
+          }
+          const payload = {
+            ...newLicense,
+            qq: newLicense.qq.trim(),
+            owner_name: newLicense.owner_name.trim(),
+            product_name: newLicense.product_name.trim(),
+            upline: newLicense.upline.trim(),
+          };
+          await axios.post('/api/license/create', payload);
+          toast.success('授权添加成功，前台已可立即查询');
+          setNewLicense(emptyLicenseForm());
+          setFormErrors({});
           fetchLicenses();
       } else {
           await axios.post('/api/auth/create', newAdmin);
@@ -198,26 +268,85 @@ export default function AdminPage() {
               <form onSubmit={handleCreate} className="space-y-4">
                  {activeTab === 'license' ? (
                      <>
-                        <div className="space-y-1">
-                            <label className="text-xs text-white/40">授权QQ</label>
-                            <input required className="glass-input w-full" placeholder="输入QQ号" value={newLicense.qq} onChange={e=>setNewLicense({...newLicense, qq:e.target.value})} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs text-white/40">授权主人</label>
-                            <input required className="glass-input w-full" placeholder="输入名称" value={newLicense.owner_name} onChange={e=>setNewLicense({...newLicense, owner_name:e.target.value})} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs text-white/40">所属产品</label>
-                            <input required className="glass-input w-full" placeholder="例如：授权平台" value={newLicense.product_name} onChange={e=>setNewLicense({...newLicense, product_name:e.target.value})} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs text-white/40">授权上级</label>
-                            <input required className="glass-input w-full" placeholder="默认：官方" value={newLicense.upline} onChange={e=>setNewLicense({...newLicense, upline:e.target.value})} />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs text-white/40">过期时间</label>
-                            <input required type="datetime-local" className="glass-input w-full" value={newLicense.expiration_date} onChange={e=>setNewLicense({...newLicense, expiration_date:e.target.value})} />
-                        </div>
+                        {/* 授权对象 */}
+                        <FormSection title="授权对象">
+                          <FormField
+                            label="授权QQ" required error={formErrors.qq}
+                            icon={<Hash className="w-4 h-4" />}
+                          >
+                            <input
+                              className={`glass-input w-full pl-9 h-10 ${formErrors.qq ? '!border-red-500/60 focus:!ring-red-500' : ''}`}
+                              placeholder="请输入QQ号码"
+                              inputMode="numeric"
+                              value={newLicense.qq}
+                              onChange={e => updateLicenseField('qq', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                            />
+                          </FormField>
+                          <FormField
+                            label="授权主人" required error={formErrors.owner_name}
+                            icon={<User className="w-4 h-4" />}
+                          >
+                            <input
+                              className={`glass-input w-full pl-9 h-10 ${formErrors.owner_name ? '!border-red-500/60 focus:!ring-red-500' : ''}`}
+                              placeholder="请输入主人名称"
+                              value={newLicense.owner_name}
+                              onChange={e => updateLicenseField('owner_name', e.target.value)}
+                            />
+                          </FormField>
+                        </FormSection>
+
+                        {/* 授权信息 */}
+                        <FormSection title="授权信息">
+                          <FormField
+                            label="所属产品" required error={formErrors.product_name}
+                            icon={<Package className="w-4 h-4" />}
+                          >
+                            <input
+                              className={`glass-input w-full pl-9 h-10 ${formErrors.product_name ? '!border-red-500/60 focus:!ring-red-500' : ''}`}
+                              placeholder="例如：超级授权系统VIP版"
+                              value={newLicense.product_name}
+                              onChange={e => updateLicenseField('product_name', e.target.value)}
+                            />
+                          </FormField>
+                          <FormField
+                            label="授权上级" required error={formErrors.upline}
+                            icon={<Network className="w-4 h-4" />}
+                          >
+                            <input
+                              className={`glass-input w-full pl-9 h-10 ${formErrors.upline ? '!border-red-500/60 focus:!ring-red-500' : ''}`}
+                              placeholder="例如：总代理"
+                              value={newLicense.upline}
+                              onChange={e => updateLicenseField('upline', e.target.value)}
+                            />
+                          </FormField>
+                        </FormSection>
+
+                        {/* 时间设置 */}
+                        <FormSection title="时间设置">
+                          <FormField
+                            label="开通时间" required error={formErrors.start_date}
+                            icon={<CalendarCheck className="w-4 h-4" />}
+                          >
+                            <input
+                              type="datetime-local"
+                              className={`glass-input w-full pl-9 h-10 [color-scheme:dark] ${formErrors.start_date ? '!border-red-500/60 focus:!ring-red-500' : ''}`}
+                              value={newLicense.start_date}
+                              onChange={e => updateLicenseField('start_date', e.target.value)}
+                            />
+                          </FormField>
+                          <FormField
+                            label="有效期（到期时间）" required error={formErrors.expiration_date}
+                            icon={<CalendarClock className="w-4 h-4" />}
+                            hint="有效期不能早于开通时间"
+                          >
+                            <input
+                              type="datetime-local"
+                              className={`glass-input w-full pl-9 h-10 [color-scheme:dark] ${formErrors.expiration_date ? '!border-red-500/60 focus:!ring-red-500' : ''}`}
+                              value={newLicense.expiration_date}
+                              onChange={e => updateLicenseField('expiration_date', e.target.value)}
+                            />
+                          </FormField>
+                        </FormSection>
                      </>
                  ) : (
                      <>
@@ -320,11 +449,18 @@ export default function AdminPage() {
                                     <div className="text-xs text-white/40 mt-0.5">{item.upline}</div>
                                 </td>
                                 <td className="p-4">
+                                    {new Date(item.expiration_date) >= new Date() ? (
                                     <div className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/20 mb-1">
                                     正常
                                     </div>
-                                    <div className="text-xs text-white/40 font-mono">
-                                    {new Date(item.expiration_date).toLocaleDateString()}
+                                    ) : (
+                                    <div className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20 mb-1">
+                                    已过期
+                                    </div>
+                                    )}
+                                    <div className="text-xs text-white/40 font-mono leading-relaxed">
+                                      <div>开通：{formatDateTime(item.start_date)}</div>
+                                      <div>到期：{formatDateTime(item.expiration_date)}</div>
                                     </div>
                                 </td>
                               </>
@@ -380,6 +516,45 @@ export default function AdminPage() {
             : "您确定要删除此管理员吗？删除后该账号将无法登录后台。"
         }
       />
+    </div>
+  );
+}
+
+function FormSection({ title, children }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-[11px] font-semibold uppercase tracking-widest text-sky-400/80 flex items-center gap-2">
+        <span className="w-4 h-px bg-sky-400/40"></span>
+        {title}
+      </legend>
+      {children}
+    </fieldset>
+  );
+}
+
+function FormField({ label, required, error, hint, icon, children }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="flex items-center justify-between text-xs font-medium text-white/60">
+        <span>
+          {label}
+          {required && <span className="text-red-400 ml-0.5">*</span>}
+        </span>
+        {hint && !error && <span className="text-[10px] text-white/30">{hint}</span>}
+      </label>
+      <div className="relative group/field">
+        {icon && (
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 group-focus-within/field:text-sky-400 transition pointer-events-none">
+            {icon}
+          </span>
+        )}
+        {children}
+      </div>
+      {error && (
+        <p className="flex items-center gap-1 text-[11px] text-red-400">
+          <AlertCircle className="w-3 h-3" /> {error}
+        </p>
+      )}
     </div>
   );
 }

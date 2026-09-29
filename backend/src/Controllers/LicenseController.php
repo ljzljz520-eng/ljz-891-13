@@ -34,7 +34,7 @@ class LicenseController {
             // But prompt also lists reasons for failure: "1.授权开通不足60分钟内" (implies < 60 mins from creation?) - this is weird, maybe it means 'just created'? or 'not synced'?
             // Usually "Authorization not found" reasons are generic boilerplate.
             // Let's just return the data.
-            
+
             http_response_code(200);
             echo json_encode([
                 "status" => "success",
@@ -43,6 +43,7 @@ class LicenseController {
                     "owner" => $row['owner_name'],
                     "product" => $row['product_name'],
                     "upline" => $row['upline'],
+                    "start_date" => $row['start_date'],
                     "expiration" => $row['expiration_date'],
                     "created_at" => $row['created_at']
                 ]
@@ -74,24 +75,95 @@ class LicenseController {
     // Admin: Create
     public function create() {
         $data = json_decode(file_get_contents("php://input"));
-        // Need: qq, owner_name, product_name, upline, expiration_date
-        $query = "INSERT INTO licenses (qq, owner_name, product_name, upline, expiration_date) VALUES (:qq, :owner, :product, :upline, :exp)";
-        $stmt = $this->db->prepare($query);
-        
-        $params = [
-            ":qq" => $data->qq,
-            ":owner" => $data->owner_name,
-            ":product" => $data->product_name,
-            ":upline" => $data->upline,
-            ":exp" => $data->expiration_date
+
+        // Required fields: 授权QQ、授权主人、有效期、授权上级、开通时间、所属产品
+        $required = [
+            'qq'              => '授权QQ',
+            'owner_name'      => '授权主人',
+            'expiration_date' => '有效期',
+            'upline'          => '授权上级',
+            'start_date'      => '开通时间',
+            'product_name'    => '所属产品',
         ];
-        
-        if($stmt->execute($params)) {
-             echo json_encode(["message" => "Created successfully"]);
+
+        if (!$data) {
+            http_response_code(400);
+            echo json_encode(["message" => "提交数据格式不正确"]);
+            return;
+        }
+
+        foreach ($required as $field => $label) {
+            if (!isset($data->$field) || trim((string)$data->$field) === '') {
+                http_response_code(400);
+                echo json_encode(["message" => "请填写{$label}"]);
+                return;
+            }
+        }
+
+        $qq       = trim($data->qq);
+        $owner    = trim($data->owner_name);
+        $product  = trim($data->product_name);
+        $upline   = trim($data->upline);
+        $start    = $this->normalizeDate($data->start_date);
+        $exp      = $this->normalizeDate($data->expiration_date);
+
+        if ($start === false) {
+            http_response_code(400);
+            echo json_encode(["message" => "开通时间格式不正确"]);
+            return;
+        }
+        if ($exp === false) {
+            http_response_code(400);
+            echo json_encode(["message" => "有效期格式不正确"]);
+            return;
+        }
+
+        // 有效期不能早于开通时间
+        if (strtotime($exp) < strtotime($start)) {
+            http_response_code(422);
+            echo json_encode(["message" => "有效期不能早于开通时间，请检查后重新提交"]);
+            return;
+        }
+
+        $query = "INSERT INTO licenses
+                    (qq, owner_name, product_name, upline, start_date, expiration_date)
+                  VALUES
+                    (:qq, :owner, :product, :upline, :start, :exp)";
+        $stmt = $this->db->prepare($query);
+
+        $params = [
+            ":qq"      => $qq,
+            ":owner"   => $owner,
+            ":product" => $product,
+            ":upline"  => $upline,
+            ":start"   => $start,
+            ":exp"     => $exp,
+        ];
+
+        if ($stmt->execute($params)) {
+             http_response_code(201);
+             echo json_encode([
+                 "message" => "授权添加成功",
+                 "id"      => (int)$this->db->lastInsertId(),
+             ]);
         } else {
              http_response_code(500);
              echo json_encode(["message" => "Create failed"]);
         }
+    }
+
+    /**
+     * Accept both HTML datetime-local strings ("2026-01-01T08:00")
+     * and standard MySQL datetime strings ("2026-01-01 08:00:00").
+     * Returns a normalized "Y-m-d H:i:s" string, or false when invalid.
+     */
+    private function normalizeDate($value) {
+        $value = trim(str_replace('T', ' ', (string)$value));
+        $ts = strtotime($value);
+        if ($ts === false) {
+            return false;
+        }
+        return date('Y-m-d H:i:s', $ts);
     }
     
     // Admin: Delete
